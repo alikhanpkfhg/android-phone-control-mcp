@@ -50,7 +50,11 @@ install_packages() {
     return 0
   fi
   note "Installing Termux packages (nodejs, git, android-tools, curl)"
-  pkg update -y >/dev/null 2>&1 || warn "pkg update failed; continuing with the current package lists"
+  if command -v yes >/dev/null 2>&1; then
+    yes 2>/dev/null | pkg update -y >/dev/null 2>&1 || warn "pkg update failed; continuing with the current package lists"
+  else
+    pkg update -y >/dev/null 2>&1 || warn "pkg update failed; continuing with the current package lists"
+  fi
   pkg_install nodejs-lts || pkg_install nodejs || warn "could not install nodejs automatically"
   pkg_install git || warn "could not install git automatically"
   pkg_install android-tools || warn "could not install android-tools automatically (fine if adb already works)"
