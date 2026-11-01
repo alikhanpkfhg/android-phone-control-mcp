@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Show tool versions
+        run: |
+          node --version
+          sh --version 2>/dev/null || true
+
+      - name: Shell script syntax
+        run: |
+          for file in *.sh scripts/*.sh; do
+            sh -n "$file"
+            echo "ok $file"
+          done
+
+      - name: No secret files committed
+        run: |
+          tracked=$(git ls-files | grep -E '(^|/)(token|token\.txt|tunnel-url\.txt|\.env|id_rsa|id_ed25519)$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::a local secret file is tracked in git: $tracked"
+            exit 1
+          fi
+          if git grep -nE 'aas_sk_|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY' -- . ; then
+            echo "::error::a credential looking string is committed"
+            exit 1
+          fi
+          echo "no secrets found"
+
+      - name: Unit and integration tests
+        run: node --test test/*.test.js

@@ -1,0 +1,42 @@
+{
+  "name": "android-phone-control-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that lets an AI assistant control a real Android phone through the Termux bridge and adb, exposed over a Cloudflare Quick Tunnel.",
+  "type": "module",
+  "license": "MIT",
+  "main": "src/main.js",
+  "bin": {
+    "android-phone-control-mcp": "src/main.js"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js",
+    "selftest": "node scripts/selftest.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "android",
+    "termux",
+    "adb",
+    "cloudflare-tunnel"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alikhanpkfhg/android-phone-control-mcp.git"
+  },
+  "files": [
+    "src",
+    "scripts",
+    "install.sh",
+    "start.sh",
+    "stop.sh",
+    "status.sh",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ]
+}

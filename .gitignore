@@ -1,0 +1,15 @@
+# Never commit local runtime state, tokens or logs.
+node_modules/
+token
+token.txt
+*.token
+.env
+.env.*
+!.env.example
+tunnel-url*.txt
+*.pid
+logs/
+run/
+*.log
+coverage/
+.DS_Store
