@@ -144,7 +144,11 @@ test("phone_screenshot returns real MCP image content from the bridge", async (t
   assert.notEqual(result.isError, true);
   assert.equal(result.content[0].type, "image");
   assert.equal(result.content[0].mimeType, "image/png");
-  assert.equal(result.content[0].data, Buffer.from(TINY_PNG_BASE64, "base64").toString("base64"));
+  assert.deepEqual(
+    Buffer.from(result.content[0].data, "base64"),
+    Buffer.from(TINY_PNG_BASE64, "base64"),
+    "the image content must be the bridge's PNG, byte for byte",
+  );
   assert.match(result.content[1].text, /bridge/);
 });
 
