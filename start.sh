@@ -156,6 +156,19 @@ start_tunnel() {
   : >"$TUNNEL_LOG"
   : >"$TUNNEL_CONSOLE_LOG"
 
+  # A stray agent left over from a manual run keeps a claim on the same ngrok dev
+  # domain (and on the local web interface port), and the managed agent then
+  # dies before writing a single log line, which looks like a silent failure.
+  case "$TUNNEL_PROVIDER" in
+    ngrok)
+      pkill -f 'ngrok http' 2>/dev/null || true
+      ;;
+    *)
+      pkill -f 'cloudflared tunnel' 2>/dev/null || true
+      ;;
+  esac
+  sleep 1
+
   case "$TUNNEL_PROVIDER" in
     ngrok) launch_ngrok ;;
     *) launch_quick ;;
