@@ -42,7 +42,11 @@ jobs:
             echo "::error::a local secret file is tracked in git: $tracked"
             exit 1
           fi
-          if git grep -nE 'aas_sk_|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY' -- . ; then
+          # The needles are built from two adjacent strings so that this
+          # workflow file does not match its own scan.
+          api_needle="aas""_sk_"
+          key_needle="BEGIN"" (RSA|OPENSSH|EC) PRIVATE"" KEY"
+          if git grep -nE "$api_needle|$key_needle" -- . ; then
             echo "::error::a credential looking string is committed"
             exit 1
           fi
