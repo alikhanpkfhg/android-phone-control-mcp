@@ -1,6 +1,6 @@
 {
   "name": "android-phone-control-mcp",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MCP server that lets an AI assistant control a real Android phone through the Termux bridge and adb, exposed over a Cloudflare Quick Tunnel.",
   "type": "module",
   "license": "MIT",
@@ -36,6 +36,7 @@
     "stop.sh",
     "status.sh",
     "report.sh",
+    "connect.sh",
     "README.md",
     "SECURITY.md",
     "LICENSE"

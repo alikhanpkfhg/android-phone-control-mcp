@@ -83,12 +83,15 @@ It starts the MCP server on `127.0.0.1:8787`, starts a Cloudflare Quick Tunnel, 
 Other commands:
 
 ```sh
+sh ~/android-phone-control-mcp/connect.sh     # start everything, print a block to paste
 sh ~/android-phone-control-mcp/status.sh     # state, URLs, token, logs
 sh ~/android-phone-control-mcp/stop.sh       # stop server + tunnel
 sh ~/android-phone-control-mcp/report.sh     # paste-able report, no token in it
 node ~/android-phone-control-mcp/scripts/selftest.js   # live smoke test
 PHONE_MCP_TUNNEL=0 sh ~/android-phone-control-mcp/start.sh   # local only
 ```
+
+`connect.sh` is the one to use when you just want it working: it starts the server and the tunnel, verifies the public URL, and then prints the report. If the configured provider cannot establish a tunnel at all, it retries once with the Cloudflare Quick Tunnel so you are not left without an endpoint — that fallback hostname changes on restart, so it is a stopgap. `sh connect.sh quick` and `sh connect.sh ngrok` force one provider for a single run without editing `config.env`.
 
 `report.sh` prints the version, both endpoints, a live check of the public tunnel, every local protocol check and the phone's real state. It never prints the bearer token, so its output is safe to paste into a chat or an issue.
 
@@ -133,7 +136,7 @@ It is a reasonable option — stable `*.ts.net` hostnames and no domain to buy �
 
 ## Add it to FreeMilk
 
-1. Run `start.sh` and copy the two values it prints.
+1. Run `connect.sh` (or `start.sh`) and copy the endpoint it prints.
 2. In FreeMilk open **Settings → Integrations → Add MCP server**.
 3. Transport: **Streamable HTTP**.
 4. URL: `https://<the-printed-host>.trycloudflare.com/mcp` (or `http://127.0.0.1:8787/mcp` if you are on the same phone).
