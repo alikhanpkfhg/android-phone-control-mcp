@@ -42,6 +42,9 @@ load_config() {
   BRIDGE_URL="${BRIDGE_URL:-http://127.0.0.1:8766}"
   PHONE_MCP_CONFIRM="${PHONE_MCP_CONFIRM:-auto}"
   CLOUDFLARED_PROTOCOL="${CLOUDFLARED_PROTOCOL:-http2}"
+  # quick = Cloudflare Quick Tunnel: no account, new hostname on every restart
+  # ngrok = ngrok free plan: one dev domain per account that survives restarts
+  TUNNEL_PROVIDER="${PHONE_MCP_TUNNEL_PROVIDER:-quick}"
 
   LOG_DIR="$PHONE_MCP_HOME/logs"
   RUN_DIR="$PHONE_MCP_HOME/run"
@@ -53,7 +56,7 @@ load_config() {
   TUNNEL_CONSOLE_LOG="$LOG_DIR/cloudflared-console.log"
   MCP_LOG="$LOG_DIR/mcp.log"
 
-  export PHONE_MCP_HOME MCP_HOST MCP_PORT BRIDGE_URL PHONE_MCP_CONFIRM CLOUDFLARED_PROTOCOL
+  export PHONE_MCP_HOME MCP_HOST MCP_PORT BRIDGE_URL PHONE_MCP_CONFIRM CLOUDFLARED_PROTOCOL TUNNEL_PROVIDER
 }
 
 ensure_dirs() {
@@ -98,6 +101,23 @@ cloudflared_bin() {
     "$(resolve_home)/bin/cloudflared" \
     "$HOME/bin/cloudflared" \
     "${PREFIX:-/usr}/bin/cloudflared"; do
+    if [ -x "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ngrok_bin() {
+  if command -v ngrok >/dev/null 2>&1; then
+    command -v ngrok
+    return 0
+  fi
+  for candidate in \
+    "$(resolve_home)/bin/ngrok" \
+    "$HOME/bin/ngrok" \
+    "${PREFIX:-/usr}/bin/ngrok"; do
     if [ -x "$candidate" ]; then
       printf '%s' "$candidate"
       return 0

@@ -33,6 +33,18 @@ export function extractTunnelUrl(text) {
   return matches ? matches[matches.length - 1] : null;
 }
 
+/**
+ * Pull the public URL out of ngrok agent output.
+ *
+ * The agent logs both the tunnel URL and the local web interface; only the
+ * https ngrok domain is the public endpoint, so the http control URL is
+ * filtered out by construction.
+ */
+export function extractNgrokUrl(text) {
+  const matches = String(text || "").match(/https:\/\/[a-z0-9-]+\.ngrok(?:-free)?\.(?:app|io|dev)/g);
+  return matches ? matches[matches.length - 1] : null;
+}
+
 export function publicMcpUrl(tunnelUrl) {
   if (!tunnelUrl) return null;
   return `${String(tunnelUrl).replace(/\/+$/, "")}/mcp`;

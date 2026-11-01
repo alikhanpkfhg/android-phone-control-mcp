@@ -94,7 +94,42 @@ PHONE_MCP_TUNNEL=0 sh ~/android-phone-control-mcp/start.sh   # local only
 
 Logs: `~/.android-phone-control-mcp/logs/mcp.log` and `logs/cloudflared.log`.
 
-> Quick Tunnel URLs are **not stable**. Every `cloudflared` restart gives a new `https://*.trycloudflare.com` hostname, so re-run `start.sh` and update the URL in FreeMilk. Use a named Cloudflare tunnel (own domain) only if you want a permanent hostname — that part is optional and not required for testing.
+> Cloudflare Quick Tunnel hostnames are **not stable**: every restart gets a new `https://*.trycloudflare.com` name, so the endpoint has to be re-added each time. For a hostname that survives restarts, use the ngrok provider below.
+
+## A tunnel that stays the same (ngrok, free)
+
+The Quick Tunnel is fine for a first test but it is the wrong tool for daily use: the hostname changes on every restart, and Cloudflare's own log says these account-less tunnels carry no uptime guarantee.
+
+ngrok's free plan gives you **one dev domain per account** (something like `your-name.ngrok-free.app`) that **does not change when the agent restarts**, and free endpoints have **no timeout** — they stay online as long as the agent runs. Limits that matter here: 1 GB out and 20,000 HTTP requests per month, 3 online endpoints. The interstitial page ngrok shows on the free tier only affects HTML browser traffic and does not apply to API clients.
+
+One-time setup:
+
+```sh
+# 1. create a free account at https://dashboard.ngrok.com/signup
+# 2. install the agent (Termux package, or the download command shown at
+#    https://dashboard.ngrok.com/get-started/setup)
+pkg install -y ngrok
+
+# 3. give the agent YOUR ngrok authtoken (from the dashboard)
+ngrok config add-authtoken <your-authtoken>
+
+# 4. switch the provider
+echo 'PHONE_MCP_TUNNEL_PROVIDER=ngrok' >> ~/.android-phone-control-mcp/config.env
+
+# 5. start again
+sh ~/android-phone-control-mcp/start.sh
+```
+
+There are now **two different secrets**, and they are not interchangeable:
+
+* the **ngrok authtoken** proves your agent belongs to your ngrok account. It goes into `ngrok config`, never into an MCP client.
+* the **MCP bearer token** at `~/.android-phone-control-mcp/token` is what the client sends on every request. Start it with the `PHONE_MCP_TUNNEL_PROVIDER=ngrok` line above and `start.sh` prints it.
+
+Keeping the agent alive is the other half of staying reachable: hold `termux-wake-lock`, disable battery optimisation for Termux, and run it inside `tmux` so closing the session does not kill it.
+
+### Why not Tailscale Funnel
+
+It is a reasonable option — stable `*.ts.net` hostnames and no domain to buy — but it is still in beta, needs the Tailscale CLI on the device and HTTPS certificates plus a policy attribute in the tailnet, and it can only listen on ports 443, 8443 and 10000, so the MCP port would have to move. ngrok is a single binary and one config line.
 
 ## Add it to FreeMilk
 

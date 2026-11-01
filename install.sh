@@ -93,6 +93,18 @@ install_cloudflared() {
   ok "cloudflared installed at $dest/cloudflared"
 }
 
+install_ngrok() {
+  if bin=$(ngrok_bin); then
+    ok "ngrok already available: $bin"
+  elif is_termux && pkg_install ngrok && bin=$(ngrok_bin); then
+    ok "ngrok installed from the Termux repository: $bin"
+  else
+    warn "ngrok is not installed."
+    warn "Download it with the command shown at https://dashboard.ngrok.com/get-started/setup"
+    warn "then run:  ngrok config add-authtoken <your-authtoken>"
+  fi
+}
+
 check_node() {
   require_node
   version=$("$NODE_BIN" -p 'process.versions.node')
@@ -138,6 +150,11 @@ PHONE_MCP_CONFIRM=auto
 
 # http2 is far more reliable than QUIC on mobile networks.
 CLOUDFLARED_PROTOCOL=http2
+
+# Which tunnel to run:
+#   quick = Cloudflare Quick Tunnel, no account, new hostname on every restart
+#   ngrok = ngrok free plan, one dev domain that survives restarts
+PHONE_MCP_TUNNEL_PROVIDER=quick
 EOF
   chmod 600 "$CONFIG_FILE"
   ok "wrote $CONFIG_FILE"
@@ -191,7 +208,11 @@ load_config
 ensure_dirs
 install_packages
 check_node
-install_cloudflared
+if [ "${PHONE_MCP_TUNNEL_PROVIDER:-quick}" = "ngrok" ]; then
+  install_ngrok
+else
+  install_cloudflared
+fi
 generate_token
 write_config
 check_bridge

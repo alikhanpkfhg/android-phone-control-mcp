@@ -9,7 +9,14 @@ import { ConfigError, loadConfig } from "../src/config.js";
 import { isAuthorized, parseBearer } from "../src/auth.js";
 import { escapeInputText, parseAdbDevices } from "../src/phone.js";
 import { ensureTokenFile, maskToken, readToken, safeEqual } from "../src/token.js";
-import { buildTunnelArgs, extractTunnelUrl, publicMcpUrl, tunnelTarget, verifyTunnel } from "../src/tunnel.js";
+import {
+  buildTunnelArgs,
+  extractNgrokUrl,
+  extractTunnelUrl,
+  publicMcpUrl,
+  tunnelTarget,
+  verifyTunnel,
+} from "../src/tunnel.js";
 import {
   ValidationError,
   assertKnownKeys,
@@ -257,4 +264,19 @@ test("a tunnel URL only counts as healthy when it reaches the server with auth",
   const dead = await verifyTunnel(url, { timeoutMs: 1500 });
   assert.equal(dead.ok, false);
   assert.equal(dead.status, 0);
+});
+
+
+test("ngrok agent output yields the account dev domain, not its control UI", () => {
+  const log = [
+    '{"lvl":"info","msg":"starting tunnel","obj":"tunnels"}',
+    '{"lvl":"info","msg":"started tunnel","name":"command_line","obj":"tunnels","addr":"http://localhost:8787","url":"https://calm-something-quiet.ngrok-free.app"}',
+    '{"lvl":"info","msg":"started web service","obj":"web","url":"http://127.0.0.1:4040"}',
+  ].join("\n");
+
+  assert.equal(extractNgrokUrl(log), "https://calm-something-quiet.ngrok-free.app");
+  // The local control UI is http, never the public endpoint.
+  assert.equal(extractNgrokUrl('{"obj":"web","url":"http://127.0.0.1:4040"}'), null);
+  assert.equal(extractNgrokUrl("nothing here"), null);
+  assert.equal(extractNgrokUrl("https://other.example.com"), null);
 });

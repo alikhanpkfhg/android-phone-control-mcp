@@ -1,10 +1,17 @@
 #!/usr/bin/env sh
 #
-# Start the MCP server (127.0.0.1:8787) and a Cloudflare Quick Tunnel for it.
-# The phone bridge on port 8766 is never exposed.
+# Start the MCP server (127.0.0.1:8787) and a tunnel for it.
 #
 #   sh start.sh
 #
+# The provider comes from PHONE_MCP_TUNNEL_PROVIDER:
+#   quick (default) Cloudflare Quick Tunnel. No account needed, but the hostname
+#                   is new on every restart and there is no uptime promise.
+#   ngrok           ngrok free plan. One dev domain per account that does NOT
+#                   change when the agent restarts, so the MCP client keeps
+#                   working across restarts.
+#
+# The phone bridge on port 8766 is never exposed.
 # Set PHONE_MCP_TUNNEL=0 to run locally only.
 set -eu
 
@@ -24,9 +31,10 @@ if command -v termux-wake-lock >/dev/null 2>&1; then
   termux-wake-lock 2>/dev/null || true
 fi
 
-# A hostname is not evidence that the tunnel works: the Cloudflare edge keeps
-# answering for a trycloudflare hostname whose cloudflared process is gone, with
-# HTTP 530. Only a 401 from POST /mcp proves the edge reached this server.
+# A hostname is not evidence that the tunnel works: the edge keeps answering for
+# a hostname whose tunnel process is gone, with HTTP 530 (Cloudflare) or a 404
+# from the agent's host. Only a 401 from POST /mcp proves the public URL reached
+# this server with the bearer gate intact.
 verify_public_url() {
   "$NODE_BIN" "$REPO_DIR/scripts/verify-tunnel.js" "$1" >/dev/null 2>&1
 }
@@ -68,35 +76,8 @@ else
   fi
 fi
 
-start_tunnel() {
-  if [ "${PHONE_MCP_TUNNEL:-1}" = "0" ]; then
-    warn "tunnel disabled by PHONE_MCP_TUNNEL=0; only the local endpoint is available"
-    # Drop any URL left over from an earlier run, so it is never advertised.
-    rm -f "$TUNNEL_URL_FILE"
-    return 0
-  fi
-
-  existing=""
-  [ -s "$TUNNEL_URL_FILE" ] && existing=$(cat "$TUNNEL_URL_FILE" 2>/dev/null || true)
-
-  if pid_alive "$TUNNEL_PID_FILE"; then
-    if [ -n "$existing" ] && verify_public_url "$existing"; then
-      ok "tunnel already running and verified: $existing"
-      return 0
-    fi
-    warn "the recorded tunnel does not answer, so nothing behind that hostname is alive; restarting cloudflared"
-    kill "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null || true
-    sleep 2
-    kill -9 "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null || true
-    rm -f "$TUNNEL_PID_FILE"
-  fi
-  rm -f "$TUNNEL_URL_FILE"
-
+launch_quick() {
   cf=$(cloudflared_bin) || fail "cloudflared is not installed - run install.sh (or set PHONE_MCP_TUNNEL=0)"
-
-  # Both logs are truncated so every hostname read below belongs to this run.
-  : >"$TUNNEL_LOG"
-  : >"$TUNNEL_CONSOLE_LOG"
 
   say "Starting a Cloudflare Quick Tunnel for http://127.0.0.1:$MCP_PORT"
   say "the phone bridge ($BRIDGE_URL) is local only and is never exposed"
@@ -108,12 +89,72 @@ start_tunnel() {
     --protocol "$CLOUDFLARED_PROTOCOL" \
     --logfile "$TUNNEL_LOG" >>"$TUNNEL_CONSOLE_LOG" 2>&1 &
   echo $! >"$TUNNEL_PID_FILE"
+}
+
+launch_ngrok() {
+  ng=$(ngrok_bin) || fail "ngrok is not installed. Install it (pkg install ngrok, or download it from https://dashboard.ngrok.com/get-started/setup) and run: ngrok config add-authtoken <your-authtoken>"
+
+  say "Starting an ngrok tunnel for http://127.0.0.1:$MCP_PORT"
+  say "the phone bridge ($BRIDGE_URL) is local only and is never exposed"
+  nohup "$ng" http "$MCP_PORT" --log=stdout --log-format=json >>"$TUNNEL_CONSOLE_LOG" 2>&1 &
+  echo $! >"$TUNNEL_PID_FILE"
+}
+
+read_tunnel_url() {
+  case "$TUNNEL_PROVIDER" in
+    ngrok)
+      "$NODE_BIN" "$REPO_DIR/scripts/tunnel-url.js" ngrok "$TUNNEL_CONSOLE_LOG" 2>/dev/null || true
+      ;;
+    *)
+      "$NODE_BIN" "$REPO_DIR/scripts/tunnel-url.js" quick "$TUNNEL_LOG" "$TUNNEL_CONSOLE_LOG" 2>/dev/null || true
+      ;;
+  esac
+}
+
+start_tunnel() {
+  if [ "${PHONE_MCP_TUNNEL:-1}" = "0" ]; then
+    warn "tunnel disabled by PHONE_MCP_TUNNEL=0; only the local endpoint is available"
+    # Drop any URL left over from an earlier run, so it is never advertised.
+    rm -f "$TUNNEL_URL_FILE"
+    return 0
+  fi
+
+  case "$TUNNEL_PROVIDER" in
+    quick | ngrok) ;;
+    *) fail "unknown PHONE_MCP_TUNNEL_PROVIDER \"$TUNNEL_PROVIDER\" (use quick or ngrok)" ;;
+  esac
+
+  existing=""
+  if [ -s "$TUNNEL_URL_FILE" ]; then
+    existing=$(cat "$TUNNEL_URL_FILE" 2>/dev/null || true)
+  fi
+
+  if pid_alive "$TUNNEL_PID_FILE"; then
+    if [ -n "$existing" ] && verify_public_url "$existing"; then
+      ok "tunnel already running and verified: $existing"
+      return 0
+    fi
+    warn "the recorded tunnel does not answer, so nothing behind that hostname is alive; restarting the agent"
+    kill "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null || true
+    sleep 2
+    kill -9 "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null || true
+    rm -f "$TUNNEL_PID_FILE"
+  fi
+  rm -f "$TUNNEL_URL_FILE"
+
+  # Truncate first, so every URL read below belongs to this run.
+  : >"$TUNNEL_LOG"
+  : >"$TUNNEL_CONSOLE_LOG"
+
+  case "$TUNNEL_PROVIDER" in
+    ngrok) launch_ngrok ;;
+    *) launch_quick ;;
+  esac
 
   i=0
   public_url=""
   while [ "$i" -lt 45 ]; do
-    public_url=$(sed -n 's|.*\(https://[a-z0-9-]*\.trycloudflare\.com\).*|\1|p' \
-      "$TUNNEL_LOG" "$TUNNEL_CONSOLE_LOG" 2>/dev/null | tail -n 1 || true)
+    public_url=$(read_tunnel_url)
     [ -n "$public_url" ] && break
     pid_alive "$TUNNEL_PID_FILE" || break
     i=$((i + 1))
@@ -121,28 +162,31 @@ start_tunnel() {
   done
 
   if [ -z "$public_url" ]; then
-    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_LOG" >&2
-    tail -n 20 "$TUNNEL_LOG" 2>/dev/null >&2 || true
+    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_CONSOLE_LOG" >&2
     tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
-    fail "cloudflared did not report a trycloudflare.com URL; see $TUNNEL_LOG and $TUNNEL_CONSOLE_LOG"
+    tail -n 20 "$TUNNEL_LOG" 2>/dev/null >&2 || true
+    fail "the tunnel agent did not report a public URL; see $TUNNEL_CONSOLE_LOG"
   fi
 
-  # Wait for the edge to actually register a connector for that hostname.
-  i=0
-  while [ "$i" -lt 45 ]; do
-    grep -q 'Registered tunnel connection' "$TUNNEL_LOG" 2>/dev/null && break
-    pid_alive "$TUNNEL_PID_FILE" || break
-    i=$((i + 1))
-    sleep 1
-  done
+  # cloudflared registers a connector after printing the hostname; ngrok's
+  # output already means the tunnel is up, so this only applies to quick.
+  if [ "$TUNNEL_PROVIDER" = "quick" ]; then
+    i=0
+    while [ "$i" -lt 45 ]; do
+      grep -q 'Registered tunnel connection' "$TUNNEL_LOG" 2>/dev/null && break
+      pid_alive "$TUNNEL_PID_FILE" || break
+      i=$((i + 1))
+      sleep 1
+    done
+  fi
 
-  # A tunnel can register and die a second later. Without this settle check the
-  # dead hostname gets written to tunnel-url.txt and looks healthy forever.
+  # A tunnel can report a URL and die a second later (missing authtoken, rate
+  # limiting). Without this settle check a dead URL gets recorded as healthy.
   sleep 2
   if ! pid_alive "$TUNNEL_PID_FILE"; then
-    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_LOG" >&2
-    tail -n 20 "$TUNNEL_LOG" 2>/dev/null >&2 || true
-    fail "cloudflared exited right after reporting a hostname (usually quick-tunnel rate limiting: wait a minute, then start.sh once)"
+    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_CONSOLE_LOG" >&2
+    tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
+    fail "the tunnel agent exited right after reporting a URL (an ngrok authtoken problem or quick-tunnel rate limiting: fix that, wait a minute, then run start.sh once)"
   fi
 
   say "Verifying the public endpoint"
@@ -160,13 +204,13 @@ start_tunnel() {
 
   if [ "$verified" -ne 1 ]; then
     "$NODE_BIN" "$REPO_DIR/scripts/verify-tunnel.js" "$public_url" >&2 || true
-    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_LOG" >&2
-    tail -n 20 "$TUNNEL_LOG" 2>/dev/null >&2 || true
+    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_CONSOLE_LOG" >&2
+    tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
     fail "the tunnel did not serve this server; not recording $public_url as usable"
   fi
 
   printf '%s\n' "$public_url" >"$TUNNEL_URL_FILE"
-  ok "public tunnel: $public_url (verified)"
+  ok "public tunnel: $public_url (verified, provider: $TUNNEL_PROVIDER)"
   return 0
 }
 
@@ -181,6 +225,7 @@ printf '  local MCP endpoint  : http://127.0.0.1:%s/mcp\n' "$MCP_PORT"
 if [ -n "$public_url" ]; then
   printf '  public MCP endpoint : %s/mcp\n' "$public_url"
   printf '  tunnel status       : verified (refuses anonymous requests)\n'
+  printf '  tunnel provider     : %s\n' "$TUNNEL_PROVIDER"
 fi
 printf '  bearer token        : %s\n' "$(print_token)"
 printf '\n'
@@ -189,6 +234,6 @@ printf 'Add MCP server (Streamable HTTP transport).\n'
 printf '\n'
 printf 'Full paste-able report: sh %s/report.sh\n' "$REPO_DIR"
 printf '\n'
-if [ -n "$public_url" ]; then
-  warn "Quick Tunnel URLs change every time cloudflared restarts: re-run start.sh and update the URL in FreeMilk."
+if [ "$TUNNEL_PROVIDER" = "quick" ] && [ -n "$public_url" ]; then
+  warn "Quick Tunnel hostnames change on every restart. Set PHONE_MCP_TUNNEL_PROVIDER=ngrok in $CONFIG_FILE for a hostname that stays the same."
 fi
