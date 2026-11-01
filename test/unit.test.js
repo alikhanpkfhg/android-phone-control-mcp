@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +9,7 @@ import { ConfigError, loadConfig } from "../src/config.js";
 import { isAuthorized, parseBearer } from "../src/auth.js";
 import { escapeInputText, parseAdbDevices } from "../src/phone.js";
 import { ensureTokenFile, maskToken, readToken, safeEqual } from "../src/token.js";
-import { buildTunnelArgs, extractTunnelUrl, publicMcpUrl, tunnelTarget } from "../src/tunnel.js";
+import { buildTunnelArgs, extractTunnelUrl, publicMcpUrl, tunnelTarget, verifyTunnel } from "../src/tunnel.js";
 import {
   ValidationError,
   assertKnownKeys,
@@ -218,4 +219,42 @@ test("adb device output is parsed into devices", () => {
   assert.equal(devices[0].serial, "10.0.0.2:5555");
   assert.equal(devices[0].state, "device");
   assert.equal(devices[1].state, "offline");
+});
+
+
+test("a tunnel URL only counts as healthy when it reaches the server with auth", async () => {
+  let respondStatus = 401;
+  const server = http.createServer((_req, res) => {
+    res.writeHead(respondStatus, { "content-type": "application/json" });
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Unauthorized" } }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const url = `http://127.0.0.1:${port}`;
+
+  try {
+    let result = await verifyTunnel(url);
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 401);
+    assert.equal(result.url, `${url}/mcp`);
+
+    // Answering without a token is a published unauthenticated endpoint.
+    respondStatus = 200;
+    result = await verifyTunnel(url);
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /bearer token/);
+
+    // The edge answering for a hostname whose connector is gone.
+    respondStatus = 530;
+    result = await verifyTunnel(url);
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /no live connector/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  // Nothing listening any more: a dead URL must never report success.
+  const dead = await verifyTunnel(url, { timeoutMs: 1500 });
+  assert.equal(dead.ok, false);
+  assert.equal(dead.status, 0);
 });

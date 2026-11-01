@@ -100,6 +100,18 @@ async function handleRequest(req, res, ctx) {
     if (req.method !== "GET" && req.method !== "HEAD") {
       return sendJson(res, 405, { error: "method_not_allowed" }, { Allow: "GET, HEAD" });
     }
+    // This endpoint enumerates the service. It is behind the token so that the
+    // tunnel never publishes anything readable without credentials. /health
+    // stays open because the shell scripts probe it for liveness and it
+    // discloses nothing beyond "ok".
+    if (!ctx.token || !isAuthorized(req, ctx.token)) {
+      return sendJson(
+        res,
+        401,
+        jsonRpcError(null, -32001, 'Unauthorized: send "Authorization: Bearer <token>"'),
+        { "WWW-Authenticate": `Bearer realm="${cfg.name}"` },
+      );
+    }
     if (req.method === "HEAD") {
       res.writeHead(200);
       return res.end();

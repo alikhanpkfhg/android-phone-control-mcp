@@ -34,7 +34,12 @@ else
 fi
 
 if [ -s "$TUNNEL_URL_FILE" ]; then
-  printf 'public URL: %s/mcp\n' "$(cat "$TUNNEL_URL_FILE")"
+  tunnel_url=$(cat "$TUNNEL_URL_FILE")
+  printf 'public URL: %s/mcp\n' "$tunnel_url"
+  # A hostname can outlive its cloudflared process and still be answered by the
+  # edge with HTTP 530, so printing it is not the same as it working.
+  "$NODE_BIN" "$SELF_DIR/scripts/verify-tunnel.js" "$tunnel_url" || \
+    warn "the recorded tunnel URL is not usable; run start.sh to replace it"
 else
   warn "public URL: none recorded yet (Quick Tunnel URLs are generated on start)"
 fi

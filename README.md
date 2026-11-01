@@ -72,7 +72,7 @@ It has no npm dependencies, so there is nothing to `npm install`.
 sh ~/android-phone-control-mcp/start.sh
 ```
 
-It starts the MCP server on `127.0.0.1:8787`, starts a Cloudflare Quick Tunnel, waits for the tunnel hostname, and prints:
+It starts the MCP server on `127.0.0.1:8787`, starts a Cloudflare Quick Tunnel, waits for a **registered** connector, then **verifies the public URL really reaches this server** before recording it, and prints:
 
 ```
   local MCP endpoint  : http://127.0.0.1:8787/mcp
@@ -85,9 +85,12 @@ Other commands:
 ```sh
 sh ~/android-phone-control-mcp/status.sh     # state, URLs, token, logs
 sh ~/android-phone-control-mcp/stop.sh       # stop server + tunnel
+sh ~/android-phone-control-mcp/report.sh     # paste-able report, no token in it
 node ~/android-phone-control-mcp/scripts/selftest.js   # live smoke test
 PHONE_MCP_TUNNEL=0 sh ~/android-phone-control-mcp/start.sh   # local only
 ```
+
+`report.sh` prints the version, both endpoints, a live check of the public tunnel, every local protocol check and the phone's real state. It never prints the bearer token, so its output is safe to paste into a chat or an issue.
 
 Logs: `~/.android-phone-control-mcp/logs/mcp.log` and `logs/cloudflared.log`.
 
@@ -165,7 +168,7 @@ Automated checks run in GitHub Actions (`.github/workflows/ci.yml`, Node 20 and 
 
 ### What has been verified here, and what has not
 
-Verified in CI (no phone involved): protocol handling, authentication, argument validation, confirmation gating, image content shape, adb/bridge fallback logic, tunnel target safety, and shell script syntax.
+Verified in CI (no phone involved): protocol handling, authentication, argument validation, confirmation gating, image content shape, adb/bridge fallback logic, tunnel target safety, tunnel liveness verification, and shell script syntax.
 
 **Not verified from here:** the behaviour of the real TECNO SPARK 20 through the real bridge and real adb. This repository was written without a device attached. Run `node ~/android-phone-control-mcp/scripts/selftest.js` on the phone after `start.sh`; it exercises `phone_status` and `phone_screenshot` against the real device and reports PASS/FAIL per check. Only claim the phone works after that output shows `phone_screenshot` returning a real screen image.
 
@@ -177,7 +180,7 @@ Verified in CI (no phone involved): protocol handling, authentication, argument 
 
 **`adb command failed: ... unauthorized`** — re-accept the wireless debugging prompt on the phone.
 
-**Tunnel URL 502 / 1033** — the tunnel started before the server was healthy, or the server stopped. Run `status.sh`, then `stop.sh && start.sh`.
+**Tunnel URL 530 / 502 / 1033** — the Cloudflare edge has no live connector for that hostname. A trycloudflare hostname outlives the cloudflared process that created it, so a URL read from the log (or from `tunnel-url.txt`) can look perfectly valid while being completely dead. Run `sh start.sh`: it notices the recorded tunnel does not answer and replaces it. Never reuse a hostname from an old run.
 
 **FreeMilk cannot connect** — make sure the URL ends in `/mcp`, the transport is Streamable HTTP, and the token was pasted without a trailing space.
 
