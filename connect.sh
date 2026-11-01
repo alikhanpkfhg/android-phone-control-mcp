@@ -7,11 +7,10 @@
 #   sh connect.sh ngrok    try ngrok only
 #   sh connect.sh quick    try the Cloudflare Quick Tunnel only
 #
-# If the configured provider cannot establish a tunnel (for example an ngrok
-# session that will not authenticate), the default mode retries once with the
-# Cloudflare Quick Tunnel so you still get a working endpoint instead of a dead
-# end. The fallback hostname changes on every restart, so it is a stopgap, not
-# the long-term answer.
+# If the configured provider cannot establish a tunnel (an ngrok session that
+# will not authenticate, or a Quick Tunnel that is being rate limited), the
+# default mode retries once with the other provider so you still get a working
+# endpoint instead of a dead end.
 set -u
 
 SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || printf '.')
@@ -45,34 +44,57 @@ try_with_provider() {
 }
 
 started=0
+failed_provider=""
 
 if [ -n "$REQUESTED" ]; then
   case "$REQUESTED" in
     quick | ngrok) ;;
     *) fail "unknown provider \"$REQUESTED\" (use quick or ngrok)" ;;
   esac
-  say "Starting with the $REQUESTED provider"
+  say "Starting with the $REQUESTED provider only"
   if try_with_provider "$REQUESTED"; then
     started=1
+  fi
+  if [ "$started" -ne 1 ]; then
+    fail "the $REQUESTED provider did not come up, and only it was tried because it was asked for explicitly"
   fi
 else
   if sh "$SELF_DIR/start.sh"; then
     started=1
   else
-    warn "the $TUNNEL_PROVIDER tunnel did not come up; see the log lines above"
-    if [ "$TUNNEL_PROVIDER" = "quick" ]; then
-      fail "the Quick Tunnel failed too, so nothing was published"
+    failed_provider="$TUNNEL_PROVIDER"
+  fi
+
+  if [ "$started" -ne 1 ]; then
+    warn "the $failed_provider provider did not come up; see the log lines above"
+
+    # Try the other provider, in either direction: a Quick Tunnel that is being
+    # rate limited should fall through to ngrok, and a broken ngrok session
+    # should fall through to a Quick Tunnel.
+    other=""
+    case "$failed_provider" in
+      ngrok) other="quick" ;;
+      *)
+        if ngrok_bin >/dev/null 2>&1; then
+          other="ngrok"
+        fi
+        ;;
+    esac
+
+    if [ -z "$other" ]; then
+      fail "no other provider is available. Install ngrok (pkg install -y ngrok) and run: ngrok config add-authtoken <your-authtoken>"
     fi
-    warn "retrying once with the Cloudflare Quick Tunnel"
-    if try_with_provider quick; then
+
+    warn "retrying once with the $other provider"
+    if try_with_provider "$other"; then
       started=1
-      warn "connected over a Quick Tunnel: this hostname changes if the tunnel restarts"
+      warn "connected over $other instead. Set PHONE_MCP_TUNNEL_PROVIDER=$other in $CONFIG_FILE to make that permanent."
     fi
   fi
 fi
 
 if [ "$started" -ne 1 ]; then
-  fail "no working tunnel. Fix the provider and run this again."
+  fail "neither provider produced a working tunnel"
 fi
 
 printf '\n'

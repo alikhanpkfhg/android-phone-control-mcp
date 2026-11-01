@@ -91,7 +91,7 @@ node ~/android-phone-control-mcp/scripts/selftest.js   # live smoke test
 PHONE_MCP_TUNNEL=0 sh ~/android-phone-control-mcp/start.sh   # local only
 ```
 
-`connect.sh` is the one to use when you just want it working: it starts the server and the tunnel, verifies the public URL, and then prints the report. If the configured provider cannot establish a tunnel at all, it retries once with the Cloudflare Quick Tunnel so you are not left without an endpoint — that fallback hostname changes on restart, so it is a stopgap. `sh connect.sh quick` and `sh connect.sh ngrok` force one provider for a single run without editing `config.env`.
+`connect.sh` is the one to use when you just want it working: it starts the server and the tunnel, verifies the public URL, and then prints the report. If the configured provider cannot establish a tunnel at all, it retries once with the **other** provider, so a Quick Tunnel that is being rate limited falls through to ngrok and a broken ngrok session falls through to a Quick Tunnel. `sh connect.sh quick` and `sh connect.sh ngrok` force one provider, with no fallback, for a single run.
 
 `report.sh` prints the version, both endpoints, a live check of the public tunnel, every local protocol check and the phone's real state. It never prints the bearer token, so its output is safe to paste into a chat or an issue.
 

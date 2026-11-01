@@ -39,6 +39,16 @@ verify_public_url() {
   "$NODE_BIN" "$REPO_DIR/scripts/verify-tunnel.js" "$1" >/dev/null 2>&1
 }
 
+# cloudflared writes everything to --logfile and nothing to stdout, while ngrok
+# writes to stdout only. Printing both is the difference between a useful error
+# and a blank one.
+dump_tunnel_logs() {
+  printf '\n--- last lines of %s ---\n' "$TUNNEL_LOG" >&2
+  tail -n 20 "$TUNNEL_LOG" 2>/dev/null >&2 || true
+  printf '\n--- last lines of %s ---\n' "$TUNNEL_CONSOLE_LOG" >&2
+  tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
+}
+
 if health_ok "http://127.0.0.1:$MCP_PORT/health"; then
   if pid_alive "$MCP_PID_FILE"; then
     ok "MCP server already running (pid $(cat "$MCP_PID_FILE"))"
@@ -162,10 +172,8 @@ start_tunnel() {
   done
 
   if [ -z "$public_url" ]; then
-    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_CONSOLE_LOG" >&2
-    tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
-    tail -n 20 "$TUNNEL_LOG" 2>/dev/null >&2 || true
-    fail "the tunnel agent did not report a public URL; see $TUNNEL_CONSOLE_LOG"
+    dump_tunnel_logs
+    fail "the tunnel agent did not report a public URL; see $TUNNEL_LOG"
   fi
 
   # cloudflared registers a connector after printing the hostname; ngrok's
@@ -184,8 +192,7 @@ start_tunnel() {
   # limiting). Without this settle check a dead URL gets recorded as healthy.
   sleep 2
   if ! pid_alive "$TUNNEL_PID_FILE"; then
-    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_CONSOLE_LOG" >&2
-    tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
+    dump_tunnel_logs
     fail "the tunnel agent exited right after reporting a URL (an ngrok authtoken problem or quick-tunnel rate limiting: fix that, wait a minute, then run start.sh once)"
   fi
 
@@ -204,8 +211,7 @@ start_tunnel() {
 
   if [ "$verified" -ne 1 ]; then
     "$NODE_BIN" "$REPO_DIR/scripts/verify-tunnel.js" "$public_url" >&2 || true
-    printf '\n--- last tunnel log lines (%s) ---\n' "$TUNNEL_CONSOLE_LOG" >&2
-    tail -n 20 "$TUNNEL_CONSOLE_LOG" 2>/dev/null >&2 || true
+    dump_tunnel_logs
     fail "the tunnel did not serve this server; not recording $public_url as usable"
   fi
 

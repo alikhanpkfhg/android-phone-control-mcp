@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 export const SERVER_NAME = "android-phone-control-mcp";
-export const VERSION = "1.2.1";
+export const VERSION = "1.2.2";
 
 export const SUPPORTED_PROTOCOL_VERSIONS = [
   "2025-06-18",
